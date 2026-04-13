@@ -23,7 +23,3 @@ config/icon="uid://b2snx34kyfmpg"
 [dotnet]
 
 project/assembly_name="TileMapLayer3D"
-
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/TileMapLayer3D/plugin.cfg")

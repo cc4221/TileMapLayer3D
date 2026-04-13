@@ -420,7 +420,7 @@ func set_selection_manager(manager: SelectionManager) -> void:
 
 ## Called when SelectionManager's selection changes
 ## Updates UI to reflect the authoritative selection state
-func _on_selection_manager_changed(tiles: Array[Rect2], anchor: int) -> void:
+func _on_selection_manager_changed(tiles: Array[Rect2], _anchor: int) -> void:
 	# Update local state from SelectionManager (derived, not authoritative)
 	_selected_tiles = tiles.duplicate()
 	has_selection = tiles.size() > 0
@@ -575,7 +575,7 @@ func _load_settings_to_ui(settings: TileMapLayerSettings) -> void:
 
 	# Load shader mode
 	if shader_mode_dropdown:
-		shader_mode_dropdown.selected = settings.shader_mode as int
+		shader_mode_dropdown.selected = int(settings.shader_mode)
 
 	# Load pixel inset
 	if pixel_inset_slider:
