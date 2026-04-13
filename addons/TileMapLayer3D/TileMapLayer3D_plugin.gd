@@ -1905,6 +1905,9 @@ func _on_shader_mode_changed(mode: int) -> void:
 		current_tile_map3d.settings.shader_mode = mode as GlobalConstants.ShaderMode
 		# Trigger tile rebuild to apply new shader mode
 		current_tile_map3d._apply_settings()
+		# Also update vertex edit materials if vertex editor is active
+		if is_instance_valid(_vertex_edit_manager):
+			_vertex_edit_manager.invalidate_and_refresh_materials()
 
 
 # --- Area Fill Operations ---

@@ -403,8 +403,24 @@ func _restore_tile_to_columnar(tile_key: int, tile_data: Dictionary) -> void:
 	)
 
 
+## Invalidate cached material and refresh all visible meshes
+## Called when shader settings change
+func invalidate_and_refresh_materials() -> void:
+	# Clear cached material - next call to _get_or_create_material() will fetch fresh one
+	_vertex_material = null
+	
+	# Refresh material on all existing meshes
+	var mat: ShaderMaterial = _get_or_create_material()
+	for tile_key: int in _vertex_tile_meshes.keys():
+		var mesh_inst: MeshInstance3D = _vertex_tile_meshes[tile_key]
+		if is_instance_valid(mesh_inst):
+			mesh_inst.material_override = mat
+
+
 ## Get the shared ShaderMaterial, delegating to TileMapLayer3D's factory.
+## Always get fresh material to ensure shader mode changes are reflected
 func _get_or_create_material() -> ShaderMaterial:
+	# Force fresh material from tile_map (do not cache locally)
 	_vertex_material = _tile_map.ensure_vertex_material()
 	return _vertex_material
 

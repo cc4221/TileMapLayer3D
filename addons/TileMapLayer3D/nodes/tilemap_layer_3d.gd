@@ -526,6 +526,9 @@ func _update_material() -> void:
 		_shared_material_double_sided = GlobalUtil.create_tile_material(
 			tileset_texture, texture_filter_mode, render_priority, false, shader_mode, settings)
 
+		# Invalidate vertex material cache so it will be recreated with the new shader mode
+		invalidate_vertex_material()
+
 		# Apply pixel inset to both materials
 		_shared_material.set_shader_parameter("inset_value", pixel_inset_value)
 		_shared_material_double_sided.set_shader_parameter("inset_value", pixel_inset_value)
@@ -565,6 +568,9 @@ func _update_material() -> void:
 			if chunk:
 				chunk.material_override = _shared_material_double_sided
 				chunk.cast_shadow = _chunk_shadow_casting
+
+		# Update material on all vertex-edited tile mesh instances
+		_update_vertex_tile_materials()
 
 
 ## Updates pixel inset on shared materials without recreating them (real-time slider)
@@ -1477,18 +1483,74 @@ func build_vertex_tile_mesh(corners_world: PackedVector3Array, uv_rect: Rect2,
 	return mesh
 
 
+## Invalidate cached vertex material when settings change
+func invalidate_vertex_material() -> void:
+	_vertex_tile_material = null
+
 ## Get or create the shared ShaderMaterial for vertex tile rendering.
 ## Called by both VertexEditManager and _rebuild_vertex_tile_meshes().
 func ensure_vertex_material() -> ShaderMaterial:
-	if _vertex_tile_material and is_instance_valid(_vertex_tile_material):
-		if _vertex_tile_material.get_shader_parameter("albedo_texture") != tileset_texture:
-			_vertex_tile_material.set_shader_parameter("albedo_texture", tileset_texture)
-		return _vertex_tile_material
+	# Determine shader mode from settings
+	var shader_mode: int = 0
+	if settings:
+		shader_mode = settings.shader_mode
+	
+	# Recreate material every time to ensure shader mode changes are reflected
+	# This is necessary because shader_mode can change at runtime
+	
+	# Select shader based on shader_mode (0=Default, 1=Toon)
+	var shader: Shader
+	match shader_mode:
+		0:  # Default shader
+			shader = load("res://addons/TileMapLayer3D/shaders/tile_vertex_edit.gdshader")
+		1:  # Toon shader
+			shader = load("res://addons/TileMapLayer3D/shaders/tile_toon_vertex_edit.gdshader")
+		_:
+			# Fallback to default shader
+			shader = load("res://addons/TileMapLayer3D/shaders/tile_vertex_edit.gdshader")
 
-	var shader: Shader = load("res://addons/TileMapLayer3D/shaders/tile_vertex_edit.gdshader")
 	var mat: ShaderMaterial = ShaderMaterial.new()
 	mat.shader = shader
 	mat.set_shader_parameter("albedo_texture", tileset_texture)
+
+	# Apply toon parameters if toon shader mode is enabled
+	if shader_mode == 1 and settings:
+		# Lighting Base
+		mat.set_shader_parameter("cuts", settings.shader_cuts)
+		mat.set_shader_parameter("step_smoothness", settings.shader_step_smoothness)
+		mat.set_shader_parameter("wrap", settings.shader_wrap)
+		mat.set_shader_parameter("steepness", settings.shader_steepness)
+		mat.set_shader_parameter("use_attenuation", settings.shader_use_attenuation)
+		mat.set_shader_parameter("clamp_diffuse_to_max", settings.shader_clamp_diffuse_to_max)
+
+		# Shadow Stylization
+		mat.set_shader_parameter("use_ramp", settings.shader_use_ramp)
+		if settings.shader_ramp_texture:
+			mat.set_shader_parameter("ramp_texture", settings.shader_ramp_texture)
+		mat.set_shader_parameter("shadow_tint", settings.shader_shadow_tint)
+		mat.set_shader_parameter("shadow_tint_amount", settings.shader_shadow_tint_amount)
+		mat.set_shader_parameter("use_borders", settings.shader_use_borders)
+		mat.set_shader_parameter("border_width", settings.shader_border_width)
+
+		# Specular
+		mat.set_shader_parameter("use_specular", settings.shader_use_specular)
+		mat.set_shader_parameter("specular_strength", settings.shader_specular_strength)
+		mat.set_shader_parameter("specular_shininess", settings.shader_specular_shininess)
+		mat.set_shader_parameter("specular_softness", settings.shader_specular_softness)
+
+		# Normal Map
+		if settings.shader_normal_texture:
+			mat.set_shader_parameter("normal_texture", settings.shader_normal_texture)
+		mat.set_shader_parameter("normal_strength", settings.shader_normal_strength)
+
+		# Rim Light
+		mat.set_shader_parameter("use_rim", settings.shader_use_rim)
+		mat.set_shader_parameter("rim_color", settings.shader_rim_color)
+		mat.set_shader_parameter("rim_amount", settings.shader_rim_amount)
+		mat.set_shader_parameter("rim_smoothness", settings.shader_rim_smoothness)
+		mat.set_shader_parameter("rim_mask_shadow", settings.shader_rim_mask_shadow)
+		mat.set_shader_parameter("rim_blend", settings.shader_rim_blend)
+
 	_vertex_tile_material = mat
 	return mat
 
@@ -1529,6 +1591,18 @@ func _rebuild_vertex_tile_meshes() -> void:
 		mesh_inst.material_override = mat
 		add_child(mesh_inst)
 		_vertex_tile_mesh_instances[tile_key] = mesh_inst
+
+
+## Update material on all existing vertex tile mesh instances when settings change
+func _update_vertex_tile_materials() -> void:
+	# Get fresh material with updated shader mode
+	var mat: ShaderMaterial = ensure_vertex_material()
+	
+	# Apply to all existing vertex mesh instances
+	for tile_key: int in _vertex_tile_mesh_instances.keys():
+		var mesh_inst: MeshInstance3D = _vertex_tile_mesh_instances[tile_key]
+		if is_instance_valid(mesh_inst):
+			mesh_inst.material_override = mat
 
 
 ## Destroy a single vertex tile mesh instance (used by VertexEditManager)

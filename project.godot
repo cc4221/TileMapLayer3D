@@ -21,3 +21,7 @@ run/max_fps=180
 [dotnet]
 
 project/assembly_name="TileMapLayer3D"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/TileMapLayer3D/plugin.cfg")
