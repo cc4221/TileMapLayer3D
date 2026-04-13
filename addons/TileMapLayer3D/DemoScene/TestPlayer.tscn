@@ -1,32 +1,55 @@
-[gd_scene load_steps=4 format=3 uid="uid://i6b1kty5odus"]
+[gd_scene format=3 uid="uid://i6b1kty5odus"]
 
-[ext_resource type="Script" path="res://addons/TileMapLayer3D/DemoScene/Player.gd" id="1_mlw08"]
+[ext_resource type="Script" uid="uid://cieifudawb8mb" path="res://addons/TileMapLayer3D/DemoScene/Player.gd" id="1_mlw08"]
+[ext_resource type="Shader" uid="uid://j2hu7a6jldq7" path="res://addons/TileMapLayer3D/shaders/outline_depth.gdshader" id="2_u6mdu"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_u720n"]
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_xv31o"]
+render_priority = 0
+shader = ExtResource("2_u6mdu")
+shader_parameter/shadows_enabled = true
+shader_parameter/highlights_enabled = true
+shader_parameter/shadow_strength = 0.4
+shader_parameter/highlight_strength = 0.1
+shader_parameter/highlight_color = Color(1, 1, 1, 1)
+shader_parameter/shadow_color = Color(0, 0, 0, 1)
+shader_parameter/outline_size = 1.0
+
+[sub_resource type="QuadMesh" id="QuadMesh_c5xch"]
+material = SubResource("ShaderMaterial_xv31o")
+size = Vector2(34, 34)
+
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_mlw08"]
 
-[node name="TestPlayer" type="CharacterBody3D"]
+[node name="TestPlayer" type="CharacterBody3D" unique_id=1737539401]
 floor_max_angle = 1.134464
 floor_snap_length = 0.2
 script = ExtResource("1_mlw08")
 
-[node name="PlayerBody" type="MeshInstance3D" parent="."]
+[node name="PlayerBody" type="MeshInstance3D" parent="." unique_id=826693360]
 mesh = SubResource("CapsuleMesh_u720n")
 skeleton = NodePath("../..")
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1540844663]
 transform = Transform3D(1, 0, 0, 0, 0.84048146, 0.54184026, 0, -0.54184026, 0.84048146, 0, 5.1005936, 8.64827)
 projection = 1
 size = 10.0
 far = 300.0
 
-[node name="FpsLabel3D" type="Label3D" parent="."]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Camera3D" unique_id=728628615]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.1, 0.054042816, -0.083828926)
+cast_shadow = 0
+extra_cull_margin = 16384.0
+ignore_occlusion_culling = true
+mesh = SubResource("QuadMesh_c5xch")
+
+[node name="FpsLabel3D" type="Label3D" parent="." unique_id=652102704]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5615754, 0)
 billboard = 1
 text = "FPS"
 font_size = 48
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=886002191]
 shape = SubResource("CapsuleShape3D_mlw08")
