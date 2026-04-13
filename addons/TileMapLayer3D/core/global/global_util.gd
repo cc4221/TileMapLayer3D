@@ -957,6 +957,18 @@ static func build_tile_transform(
 
 	# Step 1: Get scale vector (includes diagonal scale and depth scale for BOX/PRISM)
 	var scale_vector: Vector3 = get_scale_for_orientation(orientation, scale_factor, mesh_mode, depth_scale)
+
+	# For triangular mesh types: swap X/Z scale when mesh rotation is odd (1 or 3).
+	# Odd rotations (90°/270°) swap which triangle leg faces the tilt axis,
+	# so the diagonal scale must follow by swapping X↔Z to prevent skew/distortion.
+	# Square/Box meshes are symmetric and don't need this correction.
+	var is_triangle_shape: bool = (
+		mesh_mode == GlobalConstants.MeshMode.FLAT_TRIANGULE or
+		mesh_mode == GlobalConstants.MeshMode.PRISM_MESH
+	)
+	if is_triangle_shape and mesh_rotation % 2 == 1:
+		scale_vector = Vector3(scale_vector.z, scale_vector.y, scale_vector.x)
+
 	var scale_basis: Basis = Basis.from_scale(scale_vector)
 
 	# Step 2: Get orientation basis (passes tilt_angle - 0.0 means use GlobalConstants)
@@ -1238,6 +1250,16 @@ static func calculate_normalized_uv(uv_rect: Rect2, atlas_size: Vector2) -> Dict
 		"uv_max": uv_max,
 		"uv_color": uv_color
 	}
+
+
+## Encodes freeze-UV rotation data into the custom_data alpha channel (uv_max.y).
+## When freeze_uv is false, returns uv_max_y unchanged (backward compatible).
+## When freeze_uv is true, encodes mesh_rotation as offset: uv_max_y + (rotation + 1) * 2.0
+## Shader decodes: freeze_info = int(floor(a / 2.0)); actual_y = a - freeze_info * 2.0
+static func encode_uv_freeze_rotation(uv_max_y: float, mesh_rotation: int, freeze_uv: bool) -> float:
+	if not freeze_uv:
+		return uv_max_y
+	return uv_max_y + float(mesh_rotation + 1) * 2.0
 
 
 ## Transforms UV coordinates for baking to match runtime shader behavior.

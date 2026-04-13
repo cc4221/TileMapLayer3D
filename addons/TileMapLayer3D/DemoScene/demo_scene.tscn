@@ -6,13 +6,9 @@
 [ext_resource type="TileSet" uid="uid://cbx5we111ceuy" path="res://addons/TileMapLayer3D/data/autotile/SaveTileSetRes.tres" id="3_hrgnq"]
 [ext_resource type="Script" uid="uid://bli432i5uj51v" path="res://addons/TileMapLayer3D/core/tile_creation_placement/tilemap_layer_settings.gd" id="4_4erke"]
 [ext_resource type="Texture2D" uid="uid://k4020v5emb8a" path="res://addons/TileMapLayer3D/assets/temp_tilesets/Demo_TileSet_v02.png" id="5_rffu5"]
-[ext_resource type="Texture2D" uid="uid://cot3mp7m1k11r" path="res://addons/TileMapLayer3D/assets/textures_patern/noise_texture_2d.tres" id="6_g478s"]
 [ext_resource type="Script" uid="uid://c2lxt2vjdjb4b" path="res://addons/TileMapLayer3D/nodes/static_collision_body.gd" id="6_hrgnq"]
-[ext_resource type="Texture2D" uid="uid://ddgq2j7ybc1i8" path="res://addons/TileMapLayer3D/assets/textures_patern/Dither3D_2x2_Ramp.png" id="6_rt4e4"]
 [ext_resource type="Shape3D" uid="uid://cs6s3duyuhicd" path="res://addons/TileMapLayer3D/DemoScene/demo_scene_CollisionData/demo_scene_BaseLevel_collision.res" id="7_4erke"]
-[ext_resource type="ImageTexture3D" uid="uid://4p4plv3aprr" path="res://addons/TileMapLayer3D/assets/textures_patern/Dither3D_4x4.res" id="7_u1oex"]
 [ext_resource type="Script" uid="uid://xdmm7egms4uv" path="res://addons/TileMapLayer3D/core/sprite_mesh/sprite_mesh_instance.gd" id="8_rffu5"]
-[ext_resource type="Texture2D" uid="uid://dssar1tfu6cds" path="res://addons/TileMapLayer3D/assets/textures_patern/expor2t.png" id="8_u1oex"]
 [ext_resource type="Script" uid="uid://onnxwjckopnl" path="res://addons/TileMapLayer3D/core/sprite_mesh/sprite_mesh.gd" id="9_6n7mc"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_omkpi"]
@@ -52,29 +48,16 @@ speed = 5.0
 [sub_resource type="Resource" id="Resource_kki85"]
 script = ExtResource("4_4erke")
 tileset_texture = ExtResource("5_rffu5")
-selected_tile_uv = Rect2(448, 32, 32, 32)
+selected_tile_uv = Rect2(512, 0, 32, 32)
 selected_tiles = Array[Rect2]([Rect2(384, 384, 32, 32), Rect2(416, 384, 32, 32), Rect2(448, 384, 32, 32), Rect2(480, 384, 32, 32), Rect2(384, 416, 32, 32), Rect2(416, 416, 32, 32), Rect2(448, 416, 32, 32), Rect2(480, 416, 32, 32), Rect2(384, 448, 32, 32), Rect2(416, 448, 32, 32), Rect2(448, 448, 32, 32), Rect2(480, 448, 32, 32), Rect2(384, 480, 32, 32), Rect2(416, 480, 32, 32), Rect2(448, 480, 32, 32), Rect2(480, 480, 32, 32)])
-shader_mode = 1
 animate_tiles_list = Dictionary[int, ExtResource("3_6n7mc")]({
 0: SubResource("Resource_6n7mc"),
 2: SubResource("Resource_rt4e4")
 })
 autotile_tileset = ExtResource("3_hrgnq")
-autotile_active_terrain = 1
-autotile_mesh_mode = 2
-shader_border_width = 0.038
-shader_pattern_texture = ExtResource("8_u1oex")
-shader_dither_tex_3d = ExtResource("7_u1oex")
-shader_dither_ramp_tex = ExtResource("6_rt4e4")
-shader_dither_softness = 0.63
-shader_use_painterly = true
-shader_brush_texture = ExtResource("6_g478s")
-shader_painterly_tiling = 14.1
-shader_painterly_fps = 9.9
-shader_outline_brush_texture = ExtResource("6_g478s")
-shader_outline_fps = 0.0
-smart_select_mode = 1
+autotile_active_terrain = 2
 main_app_mode = 2
+mesh_mode = 1
 current_depth_scale = 0.5
 texture_repeat_mode = 1
 
@@ -117,15 +100,16 @@ speed = 5.0
 [sub_resource type="Resource" id="Resource_hrgnq"]
 script = ExtResource("4_4erke")
 tileset_texture = ExtResource("5_rffu5")
+tileset_zoom = 0.8264462809917354
 grid_snap_size = 0.5
 cursor_step_size = 0.5
 animate_tiles_list = Dictionary[int, ExtResource("3_6n7mc")]({
 0: SubResource("Resource_u1oex")
 })
+active_animated_tile = 0
 autotile_tileset = ExtResource("3_hrgnq")
 autotile_active_terrain = 0
-smart_select_mode = 1
-main_app_mode = 2
+main_app_mode = 4
 
 [sub_resource type="Resource" id="Resource_6ka1k"]
 script = ExtResource("4_4erke")
@@ -222,9 +206,5 @@ _tile_anim_data = PackedFloat32Array()
 _quad_chunks = [NodePath("SquareChunk_R0_0_0_C0"), NodePath("SquareChunk_R0_0_-1_C0"), NodePath("SquareChunk_R-1_0_0_C0"), NodePath("SquareChunk_R-1_0_-1_C0")]
 metadata/_custom_type_script = "uid://4kv8f8ejgwqn"
 metadata/_godot25d_tile_model = true
-
-[node name="SpotLight3D" type="SpotLight3D" parent="." unique_id=958074792]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6.128927, -10.059735)
-spot_attenuation = -0.9
 
 [editable path="TestPlayer"]
