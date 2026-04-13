@@ -41,7 +41,6 @@ item_id = 2
 display_name = "green_grass"
 selection_uv_rects = Array[Rect2]([Rect2(448, 672, 32, 32), Rect2(480, 672, 32, 32), Rect2(512, 672, 32, 32), Rect2(544, 672, 32, 32), Rect2(576, 672, 32, 32), Rect2(608, 672, 32, 32), Rect2(640, 672, 32, 32), Rect2(672, 672, 32, 32)])
 base_tile_size = Vector2(32, 32)
-rows = 1
 columns = 8
 frames = 8
 speed = 5.0
@@ -50,11 +49,11 @@ speed = 5.0
 script = ExtResource("4_4erke")
 tileset_texture = ExtResource("5_rffu5")
 selected_tile_uv = Rect2(512, 0, 32, 32)
+selected_tiles = Array[Rect2]([Rect2(384, 384, 32, 32), Rect2(416, 384, 32, 32), Rect2(448, 384, 32, 32), Rect2(480, 384, 32, 32), Rect2(384, 416, 32, 32), Rect2(416, 416, 32, 32), Rect2(448, 416, 32, 32), Rect2(480, 416, 32, 32), Rect2(384, 448, 32, 32), Rect2(416, 448, 32, 32), Rect2(448, 448, 32, 32), Rect2(480, 448, 32, 32), Rect2(384, 480, 32, 32), Rect2(416, 480, 32, 32), Rect2(448, 480, 32, 32), Rect2(480, 480, 32, 32)])
 animate_tiles_list = Dictionary[int, ExtResource("3_6n7mc")]({
 0: SubResource("Resource_6n7mc"),
 2: SubResource("Resource_rt4e4")
 })
-active_animated_tile = 0
 autotile_tileset = ExtResource("3_hrgnq")
 autotile_active_terrain = 2
 main_app_mode = 2
@@ -94,7 +93,6 @@ script = ExtResource("3_6n7mc")
 display_name = "green_grass"
 selection_uv_rects = Array[Rect2]([Rect2(448, 672, 32, 32), Rect2(480, 672, 32, 32), Rect2(512, 672, 32, 32), Rect2(544, 672, 32, 32), Rect2(576, 672, 32, 32), Rect2(608, 672, 32, 32), Rect2(640, 672, 32, 32), Rect2(672, 672, 32, 32)])
 base_tile_size = Vector2(32, 32)
-rows = 1
 columns = 8
 frames = 8
 speed = 5.0

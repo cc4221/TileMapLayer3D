@@ -41,6 +41,14 @@ signal smart_operations_mode_changed(smart_mode: GlobalConstants.SmartOperations
 
 signal smart_fill_changed(fill_mode: int, width: float, fill_direction: int, flip_face: bool, ramp_sides: bool)
 
+## Emitted when Vertex Edit Convert button is pressed
+signal vertex_convert_pressed()
+
+## Emitted when Vertex Edit Delete button is pressed
+signal vertex_delete_pressed()
+
+## Emitted when freeze-UV toggle is changed
+signal freeze_uv_changed(enabled: bool)
 
 # --- Member Variables ---
 
@@ -54,6 +62,11 @@ signal smart_fill_changed(fill_mode: int, width: float, fill_direction: int, fli
 @onready var smart_select_group: HBoxContainer = %SmartSelectGroup
 @onready var smart_fill_group: HBoxContainer = %SmartFillGroup
 
+# Vertex Edit group
+@onready var vertex_edit_group: HBoxContainer = %VertexEditGroup
+@onready var vertex_convert_btn: Button = %VertexConvertBtn
+@onready var vertex_delete_btn: Button = %VertexDeleteBtn
+
 ## Rotate Right button (Q)
 @onready var _rotate_right_btn: Button = %RotateRightBtn
 ## Rotate Left button (E)
@@ -64,8 +77,11 @@ signal smart_fill_changed(fill_mode: int, width: float, fill_direction: int, fli
 @onready var _reset_orientation_btn: Button = %ResetOrientationBtn
 ## Flip button (F)
 @onready var _flip_face_btn: Button = %FlipFaceBtn
+## Freeze UV toggle (created programmatically after flip button)
+@onready var _freeze_uv_btn: Button = %FreezeUVBtn
 ## Status label
 @onready var _status_label: Label = %StatusLabel
+
 
 
 @onready var smart_operation_opt_btn: OptionButton = %SmartOperationOptBtn
@@ -140,6 +156,10 @@ func prepare_ui_components() -> void:
 	_flip_face_btn.toggled.connect(_on_flip_toggled)
 	GlobalUtil.apply_button_theme(_flip_face_btn, "ExpandTree", GlobalConstants.BUTTOM_CONTEXT_UI_SIZE)
 
+	# Freeze UV toggle — insert after flip button
+	_freeze_uv_btn.toggled.connect(_on_freeze_uv_toggled)
+	GlobalUtil.apply_button_theme(_freeze_uv_btn, "Pin", GlobalConstants.BUTTOM_CONTEXT_UI_SIZE)
+
 	smart_select_replace_btn.pressed.connect(_on_smart_select_replace_pressed)
 	GlobalUtil.apply_button_theme(smart_select_replace_btn, "Loop", GlobalConstants.BUTTOM_CONTEXT_UI_SIZE) #Loop
 
@@ -189,6 +209,12 @@ func prepare_ui_components() -> void:
 	#Auto Tile Controls
 	auto_tile_mode_dropdown.item_selected.connect(_on_auto_tile_mode_selected)
 	auto_tile_detph_spin_box.value_changed.connect(_on_auto_tile_depth_changed)
+
+	# Vertex Edit Controls
+	vertex_convert_btn.pressed.connect(_on_vertex_convert_pressed)
+	GlobalUtil.apply_button_theme(vertex_convert_btn, "MeshItem", GlobalConstants.BUTTOM_CONTEXT_UI_SIZE)
+	vertex_delete_btn.pressed.connect(_on_vertex_delete_pressed)
+	GlobalUtil.apply_button_theme(vertex_delete_btn, "Remove", GlobalConstants.BUTTOM_CONTEXT_UI_SIZE)
 
 	#Smart Fill Controls
 	smart_fill_mode_opt_btn.item_selected.connect(
@@ -280,6 +306,8 @@ func sync_from_settings(tilemap_settings: TileMapLayerSettings) -> void:
 	sculp_flip_top_check_box.button_pressed = tilemap_settings.sculpt_flip_top
 	sculp_flip_bottom_check_box.button_pressed = tilemap_settings.sculpt_flip_bottom
 
+	if _freeze_uv_btn:
+		_freeze_uv_btn.button_pressed = tilemap_settings.freeze_uv_on_rotation
 
 	# Sync visibility from mode + smart select state
 	match tilemap_settings.main_app_mode:
@@ -288,25 +316,28 @@ func sync_from_settings(tilemap_settings: TileMapLayerSettings) -> void:
 			smart_operations_group.visible = false
 			auto_tile_mode_group.visible = false
 			sculp_mode_group.visible = false
-
+			vertex_edit_group.visible = false
 			self.visible = true
 		GlobalConstants.MainAppMode.AUTOTILE:
 			manual_mode_group.visible = false
 			smart_operations_group.visible = false
 			auto_tile_mode_group.visible = true
 			sculp_mode_group.visible = false
+			vertex_edit_group.visible = false
 			self.visible = true
 		GlobalConstants.MainAppMode.SMART_OPERATIONS:
 			manual_mode_group.visible = false
 			smart_operations_group.visible = true
 			auto_tile_mode_group.visible = false
 			sculp_mode_group.visible = false
+			vertex_edit_group.visible = false
 			self.visible = true
 		GlobalConstants.MainAppMode.ANIMATED_TILES:
 			manual_mode_group.visible = false
 			smart_operations_group.visible = false
 			auto_tile_mode_group.visible = false
 			sculp_mode_group.visible = false
+			vertex_edit_group.visible = false
 			# Animated mode: No context toolbar controls needed.
 			# Manual operations (mesh mode, depth, Q/E/R/T/F) are blocked; FLAT_SQUARE is forced.
 			self.visible = true
@@ -315,6 +346,14 @@ func sync_from_settings(tilemap_settings: TileMapLayerSettings) -> void:
 			smart_operations_group.visible = false
 			auto_tile_mode_group.visible = false
 			sculp_mode_group.visible = true
+			vertex_edit_group.visible = false
+			self.visible = true
+		GlobalConstants.MainAppMode.VERTEX_EDIT:
+			manual_mode_group.visible = false
+			smart_operations_group.visible = false
+			auto_tile_mode_group.visible = false
+			sculp_mode_group.visible = false
+			vertex_edit_group.visible = true
 			self.visible = true
 		GlobalConstants.MainAppMode.SETTINGS:
 			self.visible = false
@@ -323,7 +362,7 @@ func sync_from_settings(tilemap_settings: TileMapLayerSettings) -> void:
 			smart_operations_group.visible = true
 			auto_tile_mode_group.visible = true
 			sculp_mode_group.visible = true
-
+			vertex_edit_group.visible = false
 			self.visible = true
 		
 	on_smart_operations_dropdown_changed(tilemap_settings.smart_operations_main_mode)
@@ -371,6 +410,12 @@ func _on_flip_toggled(pressed: bool) -> void:
 	if _updating_ui:
 		return
 	flip_btn_pressed.emit()
+
+
+func _on_freeze_uv_toggled(pressed: bool) -> void:
+	if _updating_ui:
+		return
+	freeze_uv_changed.emit(pressed)
 
 
 func _on_mesh_mode_selected(index: int) -> void:
@@ -456,3 +501,13 @@ func _emit_smart_fill_changed() -> void:
 		smart_fill_direction_opt_btn.get_selected_id(),
 		smart_fill_face_flip_check_box.button_pressed,
 		smart_fill_ramp_sides_check_box.button_pressed)
+
+
+# --- Vertex Edit Handlers ---
+
+func _on_vertex_convert_pressed() -> void:
+	vertex_convert_pressed.emit()
+
+
+func _on_vertex_delete_pressed() -> void:
+	vertex_delete_pressed.emit()

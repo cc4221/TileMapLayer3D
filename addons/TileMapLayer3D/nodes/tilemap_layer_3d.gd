@@ -61,6 +61,10 @@ extends Node3D
 ## Independent of columnar array indices — no sync issues with add/remove operations.
 @export var _tile_custom_transforms: Dictionary = {}
 
+## Vertex-edited tiles (keyed by tile_key → Dictionary with "corners", "uv_rect", "tile_data").
+## These tiles are REMOVED from columnar storage and rendered as individual MeshInstance3D nodes.
+@export var _vertex_tile_corners: Dictionary = {}
+
 ## Sparse storage for animation data (FLAT_SQUARE only)
 ## Same pattern as transform data: _tile_anim_indices[i] = -1 (static) or >= 0 (index into _tile_anim_data)
 ## Each _tile_anim_data entry: 5 floats [step_x, step_y, total_frames, anim_columns, speed_fps]
@@ -118,6 +122,8 @@ var _shared_material_double_sided: ShaderMaterial = null  # For BOX_MESH/PRISM_M
 var _is_rebuilt: bool = false  # Track if chunks were rebuilt from saved data
 var _buffers_stripped: bool = false  # Track strip/restore state to prevent race condition
 var _reindex_in_progress: bool = false  # Prevent concurrent reindex during tile operations
+var _vertex_tile_mesh_instances: Dictionary = {}  # Runtime: tile_key → MeshInstance3D for vertex tiles
+var _vertex_tile_material: ShaderMaterial = null  # Shared material for vertex tile meshes
 var _cached_warnings: PackedStringArray = PackedStringArray()
 var _warnings_dirty: bool = true
 
@@ -274,6 +280,9 @@ func _apply_settings() -> void:
 	collision_mask = settings.collision_mask
 	# alpha_threshold = settings.alpha_threshold
 
+	# Sync mesh mode from settings (ensures correct mode after reload/deserialization)
+	current_mesh_mode = settings.mesh_mode as GlobalConstants.MeshMode
+
 	# Update material if texture or filter changed
 	if tileset_texture:
 		_update_material()
@@ -375,6 +384,7 @@ func _rebuild_chunks_from_saved_data(force_mesh_rebuild: bool = false) -> void:
 		var mesh_mode: int = (flags >> 7) & 0x3  # Bits 7-8
 		var is_face_flipped: bool = bool(flags & (1 << 9))  # Bit 9
 		var texture_repeat_mode: int = (flags >> 18) & 0x1  # Bit 18: TEXTURE_REPEAT mode
+		var freeze_uv: bool = bool((flags >> GlobalConstants.TILE_FLAG_BIT_FREEZE_UV) & 0x1)
 
 		# Read transform params if present (CRITICAL: Proper default handling)
 		var spin_angle_rad: float = 0.0
@@ -445,10 +455,12 @@ func _rebuild_chunks_from_saved_data(force_mesh_rebuild: bool = false) -> void:
 
 		chunk.multimesh.set_instance_transform(instance_index, transform)
 
-		# Set UV data
+		# Set UV data (encode freeze-UV rotation into alpha if active)
 		var atlas_size: Vector2 = tileset_texture.get_size()
 		var uv_data: Dictionary = GlobalUtil.calculate_normalized_uv(uv_rect, atlas_size)
 		var custom_data: Color = uv_data.uv_color
+		if freeze_uv:
+			custom_data.a = GlobalUtil.encode_uv_freeze_rotation(uv_data.uv_max.y, mesh_rotation, true)
 		chunk.multimesh.set_instance_custom_data(instance_index, custom_data)
 
 		# Set animation COLOR for FLAT_SQUARE chunks (only chunk type with use_colors = true)
@@ -493,6 +505,10 @@ func _rebuild_chunks_from_saved_data(force_mesh_rebuild: bool = false) -> void:
 	# NOTE: validate_and_fix_chunk_aabbs() removed from automatic call in v0.4.1
 	# Local AABB is set in setup_mesh() via GlobalConstants.CHUNK_LOCAL_AABB
 	# Chunks are positioned at region origins for proper spatial frustum culling
+
+	# Rebuild standalone MeshInstance3D nodes for vertex-edited tiles
+	if not _vertex_tile_corners.is_empty():
+		_rebuild_vertex_tile_meshes()
 
 	_is_rebuilt = true
 	_update_material()
@@ -1055,6 +1071,7 @@ func save_tile_data_direct(
 	tilt_offset: float = 0.0,
 	depth_scale: float = 0.1,
 	texture_repeat_mode: int = 0,  # 0=DEFAULT, 1=REPEAT
+	freeze_uv: bool = false,  # Freeze UV/texture in place when mesh is rotated via Q/E
 	anim_step_x: float = 0.0,
 	anim_step_y: float = 0.0,
 	anim_total_frames: int = 1,
@@ -1073,7 +1090,7 @@ func save_tile_data_direct(
 	var new_index: int = add_tile_direct(
 		grid_pos, uv_rect, orientation, mesh_rotation, mesh_mode,
 		is_face_flipped, terrain_id, spin_angle, tilt_angle,
-		diagonal_scale, tilt_offset, depth_scale, texture_repeat_mode,
+		diagonal_scale, tilt_offset, depth_scale, texture_repeat_mode, freeze_uv,
 		anim_step_x, anim_step_y, anim_total_frames, anim_columns, anim_speed_fps
 	)
 	_saved_tiles_lookup[tile_key] = new_index
@@ -1361,6 +1378,157 @@ func get_tile_index(tile_key: int) -> int:
 	return _saved_tiles_lookup.get(tile_key, -1)
 
 
+# --- Vertex Tile Helpers ---
+
+## Returns true if this tile has vertex-edited data
+func has_vertex_corners(tile_key: int) -> bool:
+	return _vertex_tile_corners.has(tile_key)
+
+
+## Returns the 4 world-space corners [BL, BR, TR, TL], or empty array if not vertex-edited
+func get_vertex_corners(tile_key: int) -> PackedVector3Array:
+	if _vertex_tile_corners.has(tile_key):
+		var entry: Dictionary = _vertex_tile_corners[tile_key]
+		return entry.get("corners", PackedVector3Array())
+	return PackedVector3Array()
+
+
+## Returns the full vertex entry Dictionary (corners + uv_rect + tile_data), or empty
+func get_vertex_entry(tile_key: int) -> Dictionary:
+	if _vertex_tile_corners.has(tile_key):
+		return _vertex_tile_corners[tile_key]
+	return {}
+
+
+## Sets the full vertex entry for a tile
+func set_vertex_entry(tile_key: int, entry: Dictionary) -> void:
+	_vertex_tile_corners[tile_key] = entry
+
+
+## Updates just the corners within an existing vertex entry
+func set_vertex_corners(tile_key: int, corners: PackedVector3Array) -> void:
+	if _vertex_tile_corners.has(tile_key):
+		_vertex_tile_corners[tile_key]["corners"] = corners
+	else:
+		# Fallback: create minimal entry (should not normally happen)
+		_vertex_tile_corners[tile_key] = {"corners": corners, "uv_rect": Rect2(), "tile_data": {}}
+
+
+## Removes vertex data for a tile
+func erase_vertex_corners(tile_key: int) -> void:
+	_vertex_tile_corners.erase(tile_key)
+
+
+## Returns the full vertex tile corners dictionary for iteration (used by TileMeshMerger)
+func get_vertex_tile_corners() -> Dictionary:
+	return _vertex_tile_corners
+
+
+## Build an ArrayMesh for a vertex tile quad from world-space corners and UV rect.
+## Shared by VertexEditManager.rebuild_mesh() and _rebuild_vertex_tile_meshes().
+func build_vertex_tile_mesh(corners_world: PackedVector3Array, uv_rect: Rect2,
+		atlas_size: Vector2, node_inv: Transform3D) -> ArrayMesh:
+	var uv_min: Vector2 = uv_rect.position / atlas_size
+	var uv_max: Vector2 = (uv_rect.position + uv_rect.size) / atlas_size
+
+	# UV mapping matches _add_square_to_arrays convention:
+	# corner[0]=BL(-X,-Z) → top-left, corner[2]=TR(+X,+Z) → bottom-right
+	var uvs: PackedVector2Array = PackedVector2Array([
+		Vector2(uv_min.x, uv_min.y),  # BL → top-left of texture
+		Vector2(uv_max.x, uv_min.y),  # BR → top-right of texture
+		Vector2(uv_max.x, uv_max.y),  # TR → bottom-right of texture
+		Vector2(uv_min.x, uv_max.y),  # TL → bottom-left of texture
+	])
+
+	var local_corners: PackedVector3Array = PackedVector3Array()
+	for corner: Vector3 in corners_world:
+		local_corners.append(node_inv * corner)
+
+	# Normal: edge2 × edge1 gives correct outward-facing direction (+Y for floor tiles)
+	var edge1: Vector3 = local_corners[1] - local_corners[0]
+	var edge2: Vector3 = local_corners[3] - local_corners[0]
+	var normal: Vector3 = edge2.cross(edge1).normalized()
+	if normal.is_zero_approx():
+		normal = Vector3.UP  # Fallback for degenerate quads
+	var normals: PackedVector3Array = PackedVector3Array([normal, normal, normal, normal])
+
+	var indices: PackedInt32Array = PackedInt32Array([0, 1, 2, 0, 2, 3])
+
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = local_corners
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = indices
+
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+## Get or create the shared ShaderMaterial for vertex tile rendering.
+## Called by both VertexEditManager and _rebuild_vertex_tile_meshes().
+func ensure_vertex_material() -> ShaderMaterial:
+	if _vertex_tile_material and is_instance_valid(_vertex_tile_material):
+		if _vertex_tile_material.get_shader_parameter("albedo_texture") != tileset_texture:
+			_vertex_tile_material.set_shader_parameter("albedo_texture", tileset_texture)
+		return _vertex_tile_material
+
+	var shader: Shader = load("res://addons/TileMapLayer3D/shaders/tile_vertex_edit.gdshader")
+	var mat: ShaderMaterial = ShaderMaterial.new()
+	mat.shader = shader
+	mat.set_shader_parameter("albedo_texture", tileset_texture)
+	_vertex_tile_material = mat
+	return mat
+
+
+## Rebuild all vertex tile MeshInstance3D nodes from persisted corner data.
+## Called from _rebuild_chunks_from_saved_data() so vertex tiles render on scene load
+## without depending on the editor plugin.
+func _rebuild_vertex_tile_meshes() -> void:
+	# Clean up any stale mesh instances
+	for key: int in _vertex_tile_mesh_instances.keys():
+		var mesh_inst: MeshInstance3D = _vertex_tile_mesh_instances[key]
+		if is_instance_valid(mesh_inst):
+			mesh_inst.queue_free()
+	_vertex_tile_mesh_instances.clear()
+
+	if not tileset_texture:
+		return
+
+	var atlas_size: Vector2 = tileset_texture.get_size()
+	if atlas_size.x <= 0.0 or atlas_size.y <= 0.0:
+		return
+
+	var mat: ShaderMaterial = ensure_vertex_material()
+	var node_inv: Transform3D = global_transform.affine_inverse()
+
+	for tile_key: int in _vertex_tile_corners.keys():
+		var entry: Dictionary = _vertex_tile_corners[tile_key]
+		var corners: PackedVector3Array = entry.get("corners", PackedVector3Array())
+		if corners.size() != 4:
+			continue
+
+		var uv_rect: Rect2 = entry.get("uv_rect", Rect2())
+		var mesh: ArrayMesh = build_vertex_tile_mesh(corners, uv_rect, atlas_size, node_inv)
+
+		var mesh_inst: MeshInstance3D = MeshInstance3D.new()
+		mesh_inst.name = "VertexTile_%d" % tile_key
+		mesh_inst.mesh = mesh
+		mesh_inst.material_override = mat
+		add_child(mesh_inst)
+		_vertex_tile_mesh_instances[tile_key] = mesh_inst
+
+
+## Destroy a single vertex tile mesh instance (used by VertexEditManager)
+func destroy_vertex_mesh_instance(tile_key: int) -> void:
+	if _vertex_tile_mesh_instances.has(tile_key):
+		var mesh_inst: MeshInstance3D = _vertex_tile_mesh_instances[tile_key]
+		if is_instance_valid(mesh_inst):
+			mesh_inst.queue_free()
+		_vertex_tile_mesh_instances.erase(tile_key)
+
+
 ## Reads tile data at index from columnar storage into a Dictionary
 func get_tile_data_at(index: int) -> Dictionary:
 	if index < 0 or index >= _tile_positions.size():
@@ -1389,6 +1557,7 @@ func get_tile_data_at(index: int) -> Dictionary:
 	result["is_face_flipped"] = ((flags >> 9) & 0x1) == 1
 	result["terrain_id"] = ((flags >> 10) & 0xFF) - 128
 	result["texture_repeat_mode"] = (flags >> 18) & 0x1
+	result["freeze_uv"] = bool((flags >> GlobalConstants.TILE_FLAG_BIT_FREEZE_UV) & 0x1)
 
 	# Transform params with CORRECT backward-compatible defaults
 	# CRITICAL: depth_scale defaults to 1.0, NOT 0.1!
@@ -1484,6 +1653,7 @@ func add_tile_direct(
 	tilt_offset: float = 0.0,
 	depth_scale: float = 0.1,  # NEW tile default
 	texture_repeat_mode: int = 0,  # TEXTURE_REPEAT: 0=DEFAULT, 1=REPEAT
+	freeze_uv: bool = false,  # Freeze UV/texture in place when mesh is rotated via Q/E
 	anim_step_x: float = 0.0,
 	anim_step_y: float = 0.0,
 	anim_total_frames: int = 1,
@@ -1501,8 +1671,8 @@ func add_tile_direct(
 	_tile_uv_rects.append(uv_rect.size.x)
 	_tile_uv_rects.append(uv_rect.size.y)
 
-	# Pack and add flags (includes texture_repeat_mode in bit 18)
-	_tile_flags.append(_pack_flags_direct(orientation, mesh_rotation, mesh_mode, is_face_flipped, terrain_id, texture_repeat_mode))
+	# Pack and add flags (includes texture_repeat_mode in bit 18, freeze_uv in bit 19)
+	_tile_flags.append(_pack_flags_direct(orientation, mesh_rotation, mesh_mode, is_face_flipped, terrain_id, texture_repeat_mode, freeze_uv))
 
 	# Check for non-default transform params
 	# IMPORTANT: depth_scale sparse storage threshold is 1.0 for backward compatibility
@@ -1546,7 +1716,7 @@ func add_tile_direct(
 	return index
 
 
-func _pack_flags_direct(orientation: int, mesh_rotation: int, mesh_mode: int, is_face_flipped: bool, terrain_id: int, texture_repeat_mode: int = 0) -> int:
+func _pack_flags_direct(orientation: int, mesh_rotation: int, mesh_mode: int, is_face_flipped: bool, terrain_id: int, texture_repeat_mode: int = 0, freeze_uv: bool = false) -> int:
 	var flags: int = 0
 	flags |= orientation & 0x1F  # Bits 0-4: orientation (0-17)
 	flags |= (mesh_rotation & 0x3) << 5  # Bits 5-6: mesh_rotation (0-3)
@@ -1557,6 +1727,9 @@ func _pack_flags_direct(orientation: int, mesh_rotation: int, mesh_mode: int, is
 	flags |= ((terrain_id + 128) & 0xFF) << 10
 	# Bit 18: texture_repeat_mode (0=DEFAULT, 1=REPEAT) for BOX/PRISM meshes
 	flags |= (texture_repeat_mode & 0x1) << 18
+	# Bit 19: freeze_uv — keep UV/texture fixed when mesh is rotated via Q/E
+	if freeze_uv:
+		flags |= 1 << GlobalConstants.TILE_FLAG_BIT_FREEZE_UV
 	return flags
 
 
