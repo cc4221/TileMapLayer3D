@@ -1963,6 +1963,176 @@ func debug_verify_tiles_in_aabbs() -> int:
 	return DebugInfoGenerator.verify_tiles_in_aabbs(self)
 
 
+## PUBLIC API FOR GETTING TILE DATA
+## 
+## These methods are designed to be used both in editor and at runtime
+## for systems like footsteps, particle effects, terrain detection, etc.
+
+
+## Returns tile data at the given world position.
+## 
+## Parameters:
+##   world_position: World space position to check for tile
+##   orientation: Optional tile orientation to check. 
+##                Default: -1 = ALL FLOOR ORIENTATIONS (flat + ramps)
+##                Use GlobalUtil.TileOrientation enum constants for specific orientation
+## 
+## IMPORTANT FOR FOOTSTEPS:
+##   By default this method checks ALL floor orientations:
+##   - FLOOR (0) - flat floor
+##   - FLOOR_TILT_POS_X (6) - ramp up
+##   - FLOOR_TILT_NEG_X (7) - ramp down
+## 
+## HEIGHT TIP:
+##   For better detection when player is walking, pass position slightly below feet:
+##   get_tile_at_position(global_position + Vector3.DOWN * 0.1)
+## 
+## Returns:
+##   Dictionary with tile data if found, null if no tile exists
+##   Dictionary contains:
+##     - exists: bool - Always true when tile is found
+##     - grid_position: Vector3 - Grid coordinates of the tile
+##     - orientation: int - Orientation enum value
+##     - uv_rect: Rect2 - UV rectangle in the tileset atlas
+##     - terrain_id: int - Terrain identifier (-1 to 127)
+##     - mesh_mode: int - Mesh mode (FLAT_SQUARE, BOX_MESH, etc.)
+##     - mesh_rotation: int - Rotation steps (0-3)
+##     - is_face_flipped: bool - Whether face is flipped
+##     - texture_repeat_mode: int - 0=DEFAULT, 1=REPEAT
+##     - freeze_uv: bool - Whether UV freezing is enabled
+##     - tile_key: int - Unique tile identifier
+## 
+## Example usage:
+##   var tile_data = tile_map.get_tile_at_position(player.global_position + Vector3.DOWN * 0.1)
+##   if tile_data:
+##       print("Tile terrain ID: ", tile_data.terrain_id)
+##       print("Tile UV rect: ", tile_data.uv_rect)
+func get_tile_at_position(world_position: Vector3, orientation: int = -1) -> Variant:
+	if not tileset_texture:
+		return null
+	
+	# Convert world position to grid coordinates
+	var grid_position: Vector3 = GlobalUtil.world_to_grid(world_position, grid_size)
+	
+	return get_tile_at_grid_position(grid_position, orientation)
+
+
+## Returns tile data at the given grid position.
+## Same as get_tile_at_position but uses grid coordinates directly.
+## 
+## Parameters:
+##   orientation: -1 = ALL FLOOR ORIENTATIONS (flat + ramps), or specific orientation
+func get_tile_at_grid_position(grid_position: Vector3, orientation: int = -1) -> Variant:
+	# Default: check all walkable floor orientations (flat + ramps)
+	if orientation == -1:
+		# Check FLOOR, FLOOR_TILT_POS_X, FLOOR_TILT_NEG_X
+		var floor_orientations: Array[int] = [
+			GlobalUtil.TileOrientation.FLOOR,          # 0
+			GlobalUtil.TileOrientation.FLOOR_TILT_POS_X, # 6
+			GlobalUtil.TileOrientation.FLOOR_TILT_NEG_X  # 7
+		]
+		
+		for ori in floor_orientations:
+			var tile_key: int = GlobalUtil.make_tile_key(grid_position, ori)
+			var tile_index: int = get_tile_index(tile_key)
+			if tile_index >= 0:
+				var result: Dictionary = get_tile_data_at(tile_index)
+				result["exists"] = true
+				result["tile_key"] = tile_key
+				return result
+		
+		return null
+	
+	# Specific orientation requested
+	var tile_key: int = GlobalUtil.make_tile_key(grid_position, orientation)
+	var tile_index: int = get_tile_index(tile_key)
+	if tile_index < 0:
+		return null
+	
+	# Use existing get_tile_data_at method which already handles all unpacking
+	var result: Dictionary = get_tile_data_at(tile_index)
+	result["exists"] = true
+	result["tile_key"] = tile_key
+	
+	return result
+
+
+## Returns ALL tiles at the given world position (checks all 6 base orientations).
+## Useful for systems that need to check walls, ceiling, and floor at the same point.
+## 
+## HEIGHT TIP:
+##   For better detection when player is walking, pass position slightly below feet:
+##   get_all_tiles_at_position(global_position + Vector3.DOWN * 0.1)
+## 
+## Returns:
+##   Array of tile data dictionaries (same format as get_tile_at_position)
+##   Empty array if no tiles found at this position
+func get_all_tiles_at_position(world_position: Vector3) -> Array:
+	var grid_position: Vector3 = GlobalUtil.world_to_grid(world_position, grid_size)
+	return get_all_tiles_at_grid_position(grid_position)
+
+
+## Returns ALL tiles at the given grid position (checks all 6 base orientations).
+func get_all_tiles_at_grid_position(grid_position: Vector3) -> Array:
+	var results: Array = []
+	
+	# Check all 6 base orientations (floor, ceiling, 4 walls)
+	for orientation in range(6):  # 0 = FLOOR, 1 = CEILING, 2-5 = WALLS
+		var tile_data: Variant = get_tile_at_grid_position(grid_position, orientation)
+		if tile_data != null:
+			results.append(tile_data)
+	
+	return results
+
+
+## Checks if there is any tile at the given world position with specified orientation.
+## Faster than get_tile_at_position when you only need existence check.
+func has_tile_at_position(world_position: Vector3, orientation: int = GlobalUtil.TileOrientation.FLOOR) -> bool:
+	var grid_position: Vector3 = GlobalUtil.world_to_grid(world_position, grid_size)
+	var tile_key: int = GlobalUtil.make_tile_key(grid_position, orientation)
+	return has_tile(tile_key)
+
+
+## SPECIALIZED METHOD FOR FOOTSTEP SYSTEMS
+## Automatically handles:
+## - Slightly lower position for better detection
+## - Checks all floor orientations (flat + ramps)
+## - Does NOT return null - always returns valid dictionary
+## 
+## This is the recommended method for footsteps and particle effects
+## 
+## Example:
+##   var ground = tile_map.get_ground_at_position(global_position)
+##   if ground.exists:
+##       play_footstep(ground.terrain_id)
+func get_ground_at_position(world_position: Vector3, y_offset: float = 0.1) -> Dictionary:
+	if not tileset_texture:
+		return {"exists": false, "terrain_id": -1}
+	
+	# Automatically adjust position slightly down for better detection
+	var check_position = world_position + Vector3.DOWN * y_offset
+	
+	# Check all walkable orientations
+	var tile_data: Variant = get_tile_at_position(check_position, -1)
+	
+	if tile_data != null:
+		return tile_data
+	
+	return {
+		"exists": false,
+		"grid_position": Vector3.ZERO,
+		"orientation": -1,
+		"uv_rect": Rect2(),
+		"terrain_id": -1,
+		"mesh_mode": 0,
+		"mesh_rotation": 0,
+		"is_face_flipped": false,
+		"texture_repeat_mode": 0,
+		"freeze_uv": false,
+		"tile_key": -1
+	}
+
+
 #region Debug Visualization
 
 func _update_chunk_debug_visualization() -> void:
